@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------------------
+# Запуск:            docker compose up -d --build
+# С PostgreSQL:      docker compose --profile postgres up -d --build
+#                    (и в .env: DATABASE_URL=postgresql+asyncpg://buklya:buklya@postgres:5432/buklya)
+# Логи контейнера:   docker compose logs -f bot
+# ---------------------------------------------------------------------------
+services:
+  bot:
+    build: .
+    container_name: buklya-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Внутри контейнера пути фиксированы, они смонтированы как тома ниже
+      LOG_DIR: /app/logs
+      PROVIDERS_FILE: /app/providers.yaml
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./providers.yaml:/app/providers.yaml:ro
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    container_name: buklya-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: buklya
+      POSTGRES_USER: buklya
+      POSTGRES_PASSWORD: buklya
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

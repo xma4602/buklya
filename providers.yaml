@@ -1,0 +1,94 @@
+# ------------------------------------------------------------------------------
+# Пресеты почтовых провайдеров для бота «Букля».
+#
+# Порядок определения серверов для адреса user@domain:
+#   1. домен есть в списке `domains` какого-либо провайдера -> берём его серверы;
+#   2. иначе смотрим MX-записи домена: если MX содержит одну из строк `mx`
+#      провайдера (например, домен ssau.ru обслуживается Яндекс 360) -> его серверы;
+#   3. иначе пробуем imap.<domain> / smtp.<domain>;
+#   4. если подключиться не удалось — бот предложит ввести серверы вручную.
+#
+# smtp_security: ssl (обычно порт 465) | starttls (обычно 587) | none
+# save_to_sent:  класть ли копию отправленного письма в «Отправленные» через IMAP
+#                (false для сервисов, которые делают это сами, иначе будут дубли)
+# ------------------------------------------------------------------------------
+
+yandex:
+  title: "Яндекс"
+  domains: [yandex.ru, ya.ru, yandex.com, yandex.by, yandex.kz, narod.ru]
+  mx: [yandex.ru, yandex.net]
+  imap_host: imap.yandex.ru
+  imap_port: 993
+  smtp_host: smtp.yandex.ru
+  smtp_port: 465
+  smtp_security: ssl
+  save_to_sent: false
+  hint: >-
+    Нужен «пароль приложения»: id.yandex.ru → Безопасность → Пароли приложений → Почта.
+    Также включите доступ по IMAP: Почта → Настройки → Почтовые программы.
+
+gmail:
+  title: "Gmail"
+  domains: [gmail.com, googlemail.com]
+  mx: [google.com, googlemail.com]
+  imap_host: imap.gmail.com
+  imap_port: 993
+  smtp_host: smtp.gmail.com
+  smtp_port: 465
+  smtp_security: ssl
+  save_to_sent: false
+  hint: >-
+    Нужен «пароль приложения» (16 символов): myaccount.google.com → Безопасность →
+    Двухэтапная аутентификация → Пароли приложений.
+
+mailru:
+  title: "Mail.ru"
+  domains: [mail.ru, inbox.ru, list.ru, bk.ru, internet.ru, my.com]
+  mx: [mail.ru]
+  imap_host: imap.mail.ru
+  imap_port: 993
+  smtp_host: smtp.mail.ru
+  smtp_port: 465
+  smtp_security: ssl
+  save_to_sent: false
+  hint: >-
+    Нужен «пароль для внешнего приложения»: Настройки → Безопасность → Пароли для внешних приложений.
+
+ssau:
+  title: "Самарский университет (ssau.ru)"
+  domains: [ssau.ru]
+  mx: []
+  # Если MX-запись домена укажет на известного провайдера, будут взяты его серверы.
+  # Иначе используются значения ниже — при необходимости поправьте их.
+  imap_host: mail.ssau.ru
+  imap_port: 993
+  smtp_host: mail.ssau.ru
+  smtp_port: 465
+  smtp_security: ssl
+  hint: >-
+    Используйте логин и пароль корпоративной почты. Если подключиться не получится —
+    выберите «Указать серверы вручную» и введите адреса из инструкции IT-отдела.
+
+rambler:
+  title: "Rambler"
+  domains: [rambler.ru, lenta.ru, autorambler.ru, myrambler.ru, ro.ru]
+  mx: [rambler.ru]
+  imap_host: imap.rambler.ru
+  imap_port: 993
+  smtp_host: smtp.rambler.ru
+  smtp_port: 465
+  smtp_security: ssl
+  hint: "Включите доступ по IMAP/SMTP в настройках почты Rambler."
+
+outlook:
+  title: "Outlook / Hotmail"
+  domains: [outlook.com, hotmail.com, live.com, msn.com]
+  mx: [outlook.com, protection.outlook.com]
+  imap_host: outlook.office365.com
+  imap_port: 993
+  smtp_host: smtp.office365.com
+  smtp_port: 587
+  smtp_security: starttls
+  save_to_sent: false
+  hint: >-
+    Microsoft постепенно отключает вход по паролю для IMAP; может потребоваться пароль приложения.
