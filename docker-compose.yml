@@ -9,7 +9,7 @@ services:
     build: .
     container_name: buklya-bot
     restart: unless-stopped
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     environment:
       # Внутри контейнера пути фиксированы, они смонтированы как тома ниже
       LOG_DIR: /app/logs
