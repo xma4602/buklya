@@ -3,6 +3,13 @@
 # С PostgreSQL:      docker compose --profile postgres up -d --build
 #                    (и в .env: DATABASE_URL=postgresql+asyncpg://buklya:buklya@postgres:5432/buklya)
 # Логи контейнера:   docker compose logs -f bot
+#
+# Пути на хосте задаются переменными (по умолчанию — папка проекта):
+#   ENV_FILE  — файл с переменными окружения   (по умолчанию ./.env)
+#   DATA_DIR  — каталог для данных/БД          (по умолчанию ./data)
+#   LOGS_DIR  — каталог для логов              (по умолчанию ./logs)
+# providers.yaml копируется в образ при сборке; локально он дополнительно
+# монтируется через docker-compose.override.yml, чтобы правки применялись без пересборки.
 # ---------------------------------------------------------------------------
 services:
   bot:
@@ -15,9 +22,8 @@ services:
       LOG_DIR: /app/logs
       PROVIDERS_FILE: /app/providers.yaml
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./providers.yaml:/app/providers.yaml:ro
+      - ${DATA_DIR:-./data}:/app/data
+      - ${LOGS_DIR:-./logs}:/app/logs
 
   postgres:
     image: postgres:16-alpine
