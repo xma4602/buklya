@@ -16,9 +16,8 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-from aiogram import Bot, Dispatcher
+from aiogram import Bot
 from aiogram.client.session.base import BaseSession
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import GetFile, TelegramMethod
 from aiogram.types import (
     CallbackQuery,
@@ -31,6 +30,7 @@ from aiogram.types import (
     User,
 )
 
+from buklya.app_context import AppContext
 from buklya.config import Settings
 from buklya.crypto import CredentialCipher, generate_master_key
 from buklya.db.database import Database
@@ -39,8 +39,8 @@ from buklya.mail.models import Attachment, MessageHeader, ParsedEmail
 from buklya.mail.providers import ProviderPreset, ProviderRegistry
 from buklya.services.mail_service import PollResult
 from buklya.services.poller import MailPoller
-from buklya.telegram.handlers import setup_routers
-from buklya.telegram.middlewares import AccessMiddleware, ActionLogMiddleware
+from buklya.telegram.app import build_dispatcher
+from buklya.telegram.notifier import TelegramNotifier
 
 USER_ID = 1001
 _ids = itertools.count(100)
@@ -163,7 +163,7 @@ def find_button(session: FakeSession, startswith: str) -> str:
 # ============================================================================ тест
 @pytest.mark.asyncio
 async def test_full_flow(tmp_path):
-    settings = Settings(bot_token="42:TEST", encryption_key=generate_master_key(), database_url="sqlite+aiosqlite://")
+    settings = Settings(encryption_key=generate_master_key(), database_url="sqlite+aiosqlite://", _env_file=None)
     db = Database(f"sqlite+aiosqlite:///{tmp_path / 'b.db'}")
     await db.create_tables()
     repo = Repository(db, CredentialCipher(settings.encryption_key))
@@ -175,12 +175,8 @@ async def test_full_flow(tmp_path):
 
     session = FakeSession()
     bot = Bot("42:TEST", session=session)
-    dp = Dispatcher(storage=MemoryStorage())
-    dp["repo"], dp["mail"], dp["settings"], dp["providers"] = repo, mail, settings, providers
-    for observer in (dp.message, dp.callback_query):
-        observer.outer_middleware(AccessMiddleware([USER_ID]))
-        observer.middleware(ActionLogMiddleware())
-    dp.include_router(setup_routers())
+    ctx = AppContext(settings=settings, db=db, repo=repo, mail=mail, providers=providers)
+    dp = build_dispatcher(ctx, allowed_users=[USER_ID])
 
     async def feed(update: Update):
         await dp.feed_update(bot, update)
@@ -196,16 +192,17 @@ async def test_full_flow(tmp_path):
     await feed(msg("app-password-123"))
     assert session.of("DeleteMessage"), "сообщение с паролем должно удаляться"
     assert any("подключён" in t for t in session.texts())
-    accounts = await repo.list_accounts(USER_ID)
+    user_id = await repo.resolve_user("telegram", USER_ID)
+    accounts = await repo.list_accounts(user_id)
     assert len(accounts) == 1 and accounts[0].last_uid == 10
 
     # --- приход нового письма
-    poller = MailPoller(bot, repo, mail, settings)
+    poller = MailPoller(repo, mail, settings, [TelegramNotifier(bot)])
     await poller.poll_all()
     new_mail_text = next(t for t in session.texts() if "Новое письмо" in t)
     assert "me@yandex.ru" in new_mail_text and "Отчёт за неделю" in new_mail_text
     assert any(getattr(r, "caption", "") and "план.xlsx" in r.caption for r in session.of("SendDocument"))
-    assert (await repo.list_accounts(USER_ID))[0].last_uid == 11
+    assert (await repo.list_accounts(user_id))[0].last_uid == 11
 
     # --- ответ из нескольких сообщений
     await feed(cb(find_button(session, "↩️ Ответить")))

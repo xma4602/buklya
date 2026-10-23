@@ -1,5 +1,7 @@
 # Telegram Bot API
 aiogram>=3.13,<4
+# ВКонтакте (Bots Long Poll API)
+vkbottle>=4.11,<5
 # ORM + асинхронные драйверы БД
 SQLAlchemy[asyncio]>=2.0.30,<2.1
 aiosqlite>=0.20

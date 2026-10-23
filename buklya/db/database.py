@@ -9,11 +9,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
 from sqlalchemy import event
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from buklya.db.models import Base
@@ -33,7 +35,12 @@ class Database:
             # Для SQLite заранее создаём каталог под файл базы
             Path(parsed.database).parent.mkdir(parents=True, exist_ok=True)
 
-        self.engine: AsyncEngine = create_async_engine(url, echo=echo, pool_pre_ping=not self.is_sqlite)
+        # SQLite: боты в разных контейнерах могут писать в один файл — ждём снятия
+        # блокировки до 30 с вместо мгновенной ошибки «database is locked»
+        connect_args = {"timeout": 30} if self.is_sqlite else {}
+        self.engine: AsyncEngine = create_async_engine(
+            url, echo=echo, pool_pre_ping=not self.is_sqlite, connect_args=connect_args
+        )
 
         if self.is_sqlite:
             # В SQLite внешние ключи (и каскадное удаление) по умолчанию выключены
@@ -55,8 +62,19 @@ class Database:
         Для промышленной эксплуатации на Postgres рекомендуется подключить
         Alembic-миграции; модели для этого уже готовы (Base.metadata).
         """
-        async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        # Контейнеры ботов стартуют одновременно и могут создавать таблицы наперегонки:
+        # «table already exists» от соседа — не ошибка, просто проверяем ещё раз.
+        for attempt in range(5):
+            try:
+                async with self.engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                break
+            except (OperationalError, ProgrammingError, IntegrityError) as exc:
+                text = str(exc).lower()
+                # SQLite/MySQL: «already exists»; PostgreSQL: «duplicate key … pg_type»
+                if not ("already exists" in text or "pg_type" in text) or attempt == 4:
+                    raise
+                await asyncio.sleep(0.2 * (attempt + 1))
         logger.info("База данных готова (%s)", make_url(self.url).render_as_string(hide_password=True))
 
     async def close(self) -> None:

@@ -7,8 +7,8 @@
 Как это устроено:
     * Мастер-ключ (`ENCRYPTION_KEY`) хранится только в окружении/секрете,
       в базе его нет.
-    * Для каждого пользователя Telegram из мастер-ключа выводится свой ключ
-      (HKDF-SHA256, info = "buklya:user:<telegram_id>"). Даже если кто-то
+    * Для каждого пользователя Букли из мастер-ключа выводится свой ключ
+      (HKDF-SHA256, info = "buklya:user:<id пользователя>"). Даже если кто-то
       скопирует зашифрованное поле в запись другого пользователя, расшифровать
       его не выйдет.
     * Данные шифруются Fernet (AES-128-CBC + HMAC-SHA256, со встроенной
@@ -61,7 +61,7 @@ def _derive(master: bytes, purpose: str) -> bytes:
 
 
 class CredentialCipher:
-    """Шифратор данных пользователя с ключами, привязанными к Telegram ID."""
+    """Шифратор данных пользователя с ключами, привязанными к ID пользователя Букли."""
 
     def __init__(self, master_key: str, old_keys: list[str] | None = None) -> None:
         # Первый ключ — актуальный (им шифруем), остальные — только для расшифровки
@@ -100,6 +100,10 @@ class CredentialCipher:
     def rotate(self, user_id: int, token: str) -> str:
         """Перешифровывает данные актуальным мастер-ключом (для ротации)."""
         return self._fernet_for(user_id).rotate(token.encode("ascii")).decode("ascii")
+
+    def token_hash(self, value: str) -> str:
+        """HMAC одноразового значения без привязки к пользователю (коды связки мессенджеров)."""
+        return hmac.new(self._index_key, f"token:{value.strip().upper()}".encode("utf-8"), hashlib.sha256).hexdigest()
 
     def blind_index(self, user_id: int, value: str) -> str:
         """Необратимый хэш значения (для проверки уникальности без раскрытия)."""

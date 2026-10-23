@@ -15,7 +15,9 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.types import BufferedInputFile
 
 from buklya.mail.models import ParsedEmail
+from buklya.services.render import email_header_html, has_multiple_recipients
 from buklya.telegram.keyboards import email_actions
+from buklya.telegram.texts import t
 
 logger = logging.getLogger(__name__)
 
@@ -62,32 +64,9 @@ def split_text(text: str, limit: int = TG_LIMIT) -> list[str]:
     return [c.rstrip("\n") for c in chunks if c.strip()] or [""]
 
 
-def clip(text: str, limit: int = 300) -> str:
-    """Обрезает слишком длинную строку (например, список из сотни адресатов)."""
-    text = text or ""
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
 def email_header(account_title: str, email: ParsedEmail, title: str) -> str:
     """Шапка письма: ящик, отправитель, тема и т.д."""
-    lines = [
-        f"{title} · <b>{esc(clip(account_title, 100))}</b>",
-        f"<b>От:</b> {esc(clip(email.from_))}",
-    ]
-    if email.to:
-        lines.append(f"<b>Кому:</b> {esc(clip(email.to))}")
-    if email.cc:
-        lines.append(f"<b>Копия:</b> {esc(clip(email.cc))}")
-    lines.append(f"<b>Тема:</b> {esc(clip(email.subject))}")
-    if email.date:
-        lines.append(f"<b>Дата:</b> {esc(clip(email.date))}")
-    if email.attachments:
-        names = esc(clip(", ".join(a.filename for a in email.attachments), 500))
-        lines.append(f"📎 <b>Вложения ({len(email.attachments)}):</b> {names}")
-    if email.skipped_attachments:
-        names = esc(clip(", ".join(email.skipped_attachments), 500))
-        lines.append(f"⚠️ <b>Слишком большие, не пересланы:</b> {names}")
-    return "\n".join(lines)
+    return email_header_html(t, account_title, email, title)
 
 
 async def send_email(
@@ -97,13 +76,13 @@ async def send_email(
     account_title: str,
     email: ParsedEmail,
     ref_id: int,
-    title: str = "📬 Новое письмо",
+    title: str | None = None,
     attach_html: bool = True,
 ) -> None:
     """Отправляет письмо в чат: шапка + текст + кнопки + вложения."""
-    header = email_header(account_title, email, title)
-    separator = "\n━━━━━━━━━━━━\n"
-    body = email.text or "(пустое письмо)"
+    header = email_header(account_title, email, title or t.plain("email.new"))
+    separator = "\n" + t("email.separator") + "\n"
+    body = email.text or t.plain("email.empty_body")
 
     # Режем текст так, чтобы первая часть уместилась вместе с шапкой
     # (остальные части того же размера — так проще и надёжнее)
@@ -114,9 +93,9 @@ async def send_email(
     truncated = len(chunks) > MAX_BODY_MESSAGES
     if truncated:
         chunks = chunks[:MAX_BODY_MESSAGES]
-        chunks[-1] += "\n\n<i>… письмо слишком длинное, полный текст — в файле ниже.</i>"
+        chunks[-1] += "\n\n" + t("email.too_long")
 
-    multiple = bool(email.cc) or "," in (email.to or "")
+    multiple = has_multiple_recipients(email)
     for i, chunk in enumerate(chunks):
         is_last = i == len(chunks) - 1
         await bot.send_message(
@@ -132,21 +111,21 @@ async def send_email(
             await bot.send_document(
                 chat_id,
                 BufferedInputFile(att.content, filename=att.filename),
-                caption=f"📎 {esc(att.filename)}",
+                caption=t("email.attachment_caption", name=att.filename),
             )
         except TelegramAPIError as exc:
             logger.warning("Не удалось отправить вложение %s: %s", att.filename, exc)
-            await bot.send_message(chat_id, f"⚠️ Не удалось переслать вложение <b>{esc(att.filename)}</b>: {esc(str(exc))}")
+            await bot.send_message(chat_id, t("email.attachment_failed", name=att.filename, error=str(exc)))
 
     # Полный текст, если он не поместился
     if truncated:
         await bot.send_document(
-            chat_id, BufferedInputFile(body.encode("utf-8"), filename="letter.txt"), caption="📄 Полный текст письма"
+            chat_id, BufferedInputFile(body.encode("utf-8"), filename="letter.txt"), caption=t("email.full_text_caption")
         )
     # Оригинальная HTML-версия (картинки, таблицы и вёрстка видны в браузере)
     if attach_html and email.html.strip():
         await bot.send_document(
             chat_id,
             BufferedInputFile(email.html.encode("utf-8"), filename="letter.html"),
-            caption="🌐 Оригинал письма (HTML)",
+            caption=t("email.html_caption"),
         )

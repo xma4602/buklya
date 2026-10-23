@@ -15,26 +15,58 @@ from typing import Annotated
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from buklya.platforms import parse_platforms
+
 # Корень проекта (папка, где лежат Dockerfile, .env и т.д.)
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+#: Общие параметры чтения настроек (используются и настройками платформ)
+SETTINGS_CONFIG = SettingsConfigDict(
+    env_file=BASE_DIR / ".env",
+    env_file_encoding="utf-8",
+    extra="ignore",
+    # Пустые значения (VK_GROUP_ID=) считаются незаданными — берётся значение по умолчанию
+    env_ignore_empty=True,
+)
+
+
+def split_csv(value):
+    """Список из строки через запятую: `1,2,3` (для полей-списков в настройках)."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return value
+
+
+class ConfigError(Exception):
+    """Ошибка настройки (нет токена, неизвестная платформа и т.п.) — текст для человека."""
 
 
 class Settings(BaseSettings):
     """Настройки приложения. Имена полей = имена переменных окружения (без учёта регистра)."""
 
-    model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = SETTINGS_CONFIG
 
-    # ------------------------------------------------------------------ Telegram
-    #: Токен бота от @BotFather
-    bot_token: str = Field(..., description="Токен Telegram-бота")
+    # ------------------------------------------------------------------ Какие боты запускать
+    #: Платформы через запятую (telegram, vk) или all.
+    #: Пусто — запускаются все платформы, для которых заданы настройки (токен).
+    #: Можно переопределить аргументом командной строки: python -m buklya vk
+    #: Настройки самих платформ (токены, списки доступа) — в buklya/<платформа>/settings.py.
+    bots: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
-    #: Список Telegram ID, которым разрешено пользоваться ботом (через запятую).
-    #: Пустой список — бот доступен всем.
-    allowed_users: Annotated[list[int], NoDecode] = Field(default_factory=list)
+    # ------------------------------------------------------------------ Связка мессенджеров
+    #: Сколько минут действует код для связки мессенджеров (/link)
+    link_code_ttl_minutes: int = 10
+
+    # ------------------------------------------------------------------ Локализация
+    #: Язык текстов бота: файл locales/<язык>.yaml (недостающие строки берутся из ru.yaml)
+    locale: str = "ru"
+
+    #: Каталог с файлами локализации
+    locales_dir: Path = BASE_DIR / "locales"
 
     # ------------------------------------------------------------------ База данных
     #: URL базы данных в формате SQLAlchemy (async-драйвер).
@@ -87,25 +119,28 @@ class Settings(BaseSettings):
     #: Сколько дней хранить старые лог-файлы (0 — не удалять)
     log_retention_days: int = 30
 
+    #: Цвет в консоли: auto (если консоль поддерживает), true, false. В файлы цвет не пишется.
+    log_color: str = "auto"
+
     # ------------------------------------------------------------------ Валидаторы
-    @field_validator("allowed_users", "old_encryption_keys", mode="before")
+    @field_validator("bots", mode="before")
+    @classmethod
+    def _parse_bots(cls, value):
+        """BOTS=telegram,vk | all | (пусто)."""
+        return parse_platforms(value) if value not in (None, "") else []
+
+    @field_validator("old_encryption_keys", mode="before")
     @classmethod
     def _split_csv(cls, value):
-        """Позволяет задавать списки строкой через запятую: `1,2,3`."""
-        if value is None or value == "":
-            return []
-        if isinstance(value, (int,)):
-            return [value]
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        """Позволяет задавать списки строкой через запятую."""
+        return split_csv(value)
 
     @field_validator("log_level")
     @classmethod
     def _upper_level(cls, value: str) -> str:
         return value.upper()
 
-    @field_validator("log_dir", "providers_file")
+    @field_validator("log_dir", "providers_file", "locales_dir")
     @classmethod
     def _resolve_path(cls, value: Path) -> Path:
         """Относительные пути считаем от корня проекта, а не от текущей папки запуска."""

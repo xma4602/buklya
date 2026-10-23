@@ -13,6 +13,7 @@ from email.utils import getaddresses, parseaddr
 
 from bs4 import BeautifulSoup
 
+from buklya.i18n import t
 from buklya.mail.models import Attachment, MessageHeader, ParsedEmail
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,7 @@ def parse_email(raw: bytes, uid: int = 0, max_attachment_size: int | None = None
     from_raw = _header(msg, "From")
     result = ParsedEmail(
         uid=uid,
-        subject=_header(msg, "Subject") or "(без темы)",
+        subject=_header(msg, "Subject") or t.plain("common.no_subject"),
         from_=format_addresses(from_raw),
         from_addr=parseaddr(from_raw)[1],
         reply_to=format_addresses(_header(msg, "Reply-To")),
@@ -178,7 +179,7 @@ def parse_email(raw: bytes, uid: int = 0, max_attachment_size: int | None = None
                 payload = part.as_bytes()
             payload = payload or b""
             if max_attachment_size and len(payload) > max_attachment_size:
-                result.skipped_attachments.append(f"{name} ({len(payload) // 1024 // 1024} МБ)")
+                result.skipped_attachments.append(t.plain("mail.size_mb", name=name, size=len(payload) // 1024 // 1024))
                 continue
             result.attachments.append(Attachment(filename=name, content=payload, content_type=ctype))
         elif ctype == "text/plain":
@@ -201,7 +202,7 @@ def parse_header_only(raw: bytes, uid: int, seen: bool = True) -> MessageHeader:
     name, addr = parseaddr(from_raw)
     return MessageHeader(
         uid=uid,
-        subject=_header(msg, "Subject") or "(без темы)",
+        subject=_header(msg, "Subject") or t.plain("common.no_subject"),
         from_=decode_mime_header(name) or addr,
         date=_header(msg, "Date"),
         seen=seen,

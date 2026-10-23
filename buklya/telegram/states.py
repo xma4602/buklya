@@ -29,3 +29,9 @@ class Compose(StatesGroup):
     body = State()  # текст и вложения (можно несколькими сообщениями)
     edit_subject = State()  # смена темы из черновика
     edit_cc = State()  # указание копии из черновика
+
+
+class LinkMessengers(StatesGroup):
+    """Связка мессенджеров: ждём код из другого мессенджера."""
+
+    code = State()

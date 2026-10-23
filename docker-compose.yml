@@ -1,29 +1,53 @@
 # ---------------------------------------------------------------------------
-# Запуск:            docker compose up -d --build
-# С PostgreSQL:      docker compose --profile postgres up -d --build
-#                    (и в .env: DATABASE_URL=postgresql+asyncpg://buklya:buklya@postgres:5432/buklya)
-# Логи контейнера:   docker compose logs -f bot
+# Каждый мессенджер — отдельный контейнер (общая база, общий ENCRYPTION_KEY).
+#
+# Только Telegram:    docker compose --profile telegram up -d --build
+# Только ВКонтакте:   docker compose --profile vk up -d --build
+# Telegram + ВК:      docker compose --profile all up -d --build
+#
+# Профиль можно один раз задать в .env (его читает сам docker compose):
+#   COMPOSE_PROFILES=all        — и дальше просто: docker compose up -d --build
+#
+# С PostgreSQL:       добавьте профиль postgres (COMPOSE_PROFILES=all,postgres)
+#                     и в .env: DATABASE_URL=postgresql+asyncpg://buklya:buklya@postgres:5432/buklya
+# Логи контейнеров:   docker compose logs -f telegram vk
 #
 # Пути на хосте задаются переменными (по умолчанию — папка проекта):
 #   ENV_FILE  — файл с переменными окружения   (по умолчанию ./.env)
 #   DATA_DIR  — каталог для данных/БД          (по умолчанию ./data)
 #   LOGS_DIR  — каталог для логов              (по умолчанию ./logs)
-# providers.yaml копируется в образ при сборке; локально он дополнительно
-# монтируется через docker-compose.override.yml, чтобы правки применялись без пересборки.
+# providers.yaml и locales/ копируются в образ при сборке; чтобы править их без
+# пересборки, смонтируйте их в docker-compose.override.yml.
+#
+# Новая платформа: добавьте сервис по образцу ниже (command: … <имя платформы>).
 # ---------------------------------------------------------------------------
+
+# Общие настройки контейнеров ботов (образ один, платформа выбирается командой)
+x-bot: &bot
+  build: .
+  image: buklya:latest
+  restart: unless-stopped
+  env_file: ${ENV_FILE:-.env}
+  environment:
+    # Внутри контейнера пути фиксированы, они смонтированы как тома ниже
+    LOG_DIR: /app/logs
+    PROVIDERS_FILE: /app/providers.yaml
+  volumes:
+    - ${DATA_DIR:-./data}:/app/data
+    - ${LOGS_DIR:-./logs}:/app/logs
+
 services:
-  bot:
-    build: .
-    container_name: buklya-bot
-    restart: unless-stopped
-    env_file: ${ENV_FILE:-.env}
-    environment:
-      # Внутри контейнера пути фиксированы, они смонтированы как тома ниже
-      LOG_DIR: /app/logs
-      PROVIDERS_FILE: /app/providers.yaml
-    volumes:
-      - ${DATA_DIR:-./data}:/app/data
-      - ${LOGS_DIR:-./logs}:/app/logs
+  telegram:
+    <<: *bot
+    profiles: ["telegram", "all"]
+    container_name: buklya-telegram
+    command: ["python", "-m", "buklya", "telegram"]
+
+  vk:
+    <<: *bot
+    profiles: ["vk", "all"]
+    container_name: buklya-vk
+    command: ["python", "-m", "buklya", "vk"]
 
   postgres:
     image: postgres:16-alpine

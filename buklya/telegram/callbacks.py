@@ -46,3 +46,9 @@ class AddCb(CallbackData, prefix="add"):
     """Кнопки мастера подключения ящика: manual, password, login, cancel."""
 
     action: str
+
+
+class LinkCb(CallbackData, prefix="lnk"):
+    """Кнопки экрана «Мессенджеры»: enter (ввести код), code (новый код), unlink, cancel."""
+
+    action: str

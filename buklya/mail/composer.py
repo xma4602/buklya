@@ -1,5 +1,5 @@
 """
-Сборка исходящего письма (MIME) из того, что пользователь написал в Telegram.
+Сборка исходящего письма (MIME) из того, что пользователь написал в чате (Telegram или ВКонтакте).
 
 Письмо формируется как multipart/mixed:
     ├── multipart/alternative
@@ -15,6 +15,7 @@ import re
 from email.message import EmailMessage
 from email.utils import formatdate, getaddresses, make_msgid, parseaddr
 
+from buklya.i18n import t
 from buklya.mail.models import Attachment, MailCredentials
 
 _EMAIL_RE = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
@@ -51,10 +52,10 @@ def parse_recipients(value: str) -> list[str]:
         if not addr:
             continue
         if not _EMAIL_RE.match(addr):
-            raise ValueError(f"Некорректный адрес: {addr}")
+            raise ValueError(t.plain("mail.bad_address", address=addr))
         result.append(format_address(name, addr))
     if not result:
-        raise ValueError("Не указан ни один адрес")
+        raise ValueError(t.plain("mail.no_address"))
     return result
 
 
@@ -66,11 +67,13 @@ def reply_subject(subject: str) -> str:
     return f"Re: {subject}".strip()
 
 
-def telegram_html_to_email_html(tg_html: str) -> str:
+def chat_html_to_email_html(tg_html: str) -> str:
     """
-    Telegram отдаёт HTML-разметку сообщения (b, i, u, s, a, code, pre,
-    blockquote, tg-spoiler). Переводим её в HTML для письма: переносы строк -> <br>,
-    спойлер -> обычный текст.
+    HTML-разметку сообщений из чата переводим в HTML для письма: переносы строк -> <br>,
+    спойлер -> обычный текст, цитаты — с отступом.
+
+    Telegram отдаёт разметку b, i, u, s, a, code, pre, blockquote, tg-spoiler;
+    из ВКонтакте приходят b, i, u, a (см. `buklya.vk.markup.vk_to_html`).
     """
     html = tg_html
     html = re.sub(r"<tg-spoiler>(.*?)</tg-spoiler>", r"\1", html, flags=re.S)
@@ -84,6 +87,10 @@ def telegram_html_to_email_html(tg_html: str) -> str:
     parts = re.split(r"(<pre>.*?</pre>)", html, flags=re.S)
     parts = [p if p.startswith("<pre>") else p.replace("\n", "<br>\n") for p in parts]
     return "".join(parts)
+
+
+#: Прежнее имя функции (сохранено для совместимости)
+telegram_html_to_email_html = chat_html_to_email_html
 
 
 def guess_content_type(filename: str, fallback: str = "application/octet-stream") -> str:
@@ -121,7 +128,7 @@ def build_message(
     msg["Date"] = formatdate(localtime=True)
     domain = parseaddr(creds.email)[1].rsplit("@", 1)[-1] or None
     msg["Message-ID"] = make_msgid(domain=domain)
-    msg["X-Mailer"] = "Buklya Telegram Bot"
+    msg["X-Mailer"] = "Buklya Mail Bot"
 
     # Заголовки, связывающие ответ с исходным письмом (для «цепочек» в почтовиках)
     if in_reply_to:

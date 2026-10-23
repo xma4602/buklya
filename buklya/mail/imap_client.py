@@ -14,6 +14,7 @@ import re
 import time
 from types import TracebackType
 
+from buklya.i18n import t
 from buklya.mail.models import MailCredentials, MessageHeader
 from buklya.mail.parser import parse_header_only
 
@@ -58,13 +59,13 @@ class ImapClient:
                 if "STARTTLS" in self.conn.capabilities:
                     self.conn.starttls()
         except OSError as exc:
-            raise ImapError(f"Не удалось подключиться к {c.imap_host}:{c.imap_port} ({exc})") from exc
+            raise ImapError(t.plain("mail.imap_connect_failed", host=c.imap_host, port=c.imap_port, error=exc)) from exc
 
         try:
             self._login()
         except imaplib.IMAP4.error as exc:
             self.close()
-            raise ImapError(f"Сервер отклонил логин/пароль: {_text(exc)}") from exc
+            raise ImapError(t.plain("mail.imap_auth_failed", error=_text(exc))) from exc
 
     def _login(self) -> None:
         """LOGIN, а для паролей с не-ASCII символами — AUTHENTICATE PLAIN."""
@@ -96,7 +97,7 @@ class ImapClient:
 
     def _select_inbox(self) -> None:
         assert self.conn is not None
-        self._ok(self.conn.select(self.INBOX, readonly=True), "Не удалось открыть «Входящие»")
+        self._ok(self.conn.select(self.INBOX, readonly=True), t.plain("mail.imap_inbox_failed"))
 
     # ================================================================ операции
     def inbox_status(self) -> tuple[int, int, int]:

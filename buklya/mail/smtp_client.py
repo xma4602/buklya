@@ -9,6 +9,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
+from buklya.i18n import t
 from buklya.mail.models import MailCredentials
 
 logger = logging.getLogger(__name__)
@@ -31,16 +32,16 @@ def _open(creds: MailCredentials, timeout: int) -> smtplib.SMTP:
                 server.starttls(context=context)
                 server.ehlo()
     except (OSError, smtplib.SMTPException) as exc:
-        raise SmtpError(f"Не удалось подключиться к {creds.smtp_host}:{creds.smtp_port} ({exc})") from exc
+        raise SmtpError(t.plain("mail.smtp_connect_failed", host=creds.smtp_host, port=creds.smtp_port, error=exc)) from exc
 
     try:
         server.login(creds.login, creds.password)
     except smtplib.SMTPAuthenticationError as exc:
         server.close()
-        raise SmtpError("SMTP-сервер отклонил логин/пароль") from exc
+        raise SmtpError(t.plain("mail.smtp_auth_failed")) from exc
     except smtplib.SMTPException as exc:
         server.close()
-        raise SmtpError(f"Ошибка авторизации SMTP: {exc}") from exc
+        raise SmtpError(t.plain("mail.smtp_auth_error", error=exc)) from exc
     return server
 
 
@@ -59,11 +60,11 @@ def send_message(creds: MailCredentials, message: EmailMessage, timeout: int = 3
     try:
         refused = server.send_message(message)
         if refused:
-            raise SmtpError("Сервер отклонил получателей: " + ", ".join(refused))
+            raise SmtpError(t.plain("mail.smtp_refused", recipients=", ".join(refused)))
     except smtplib.SMTPRecipientsRefused as exc:
-        raise SmtpError("Сервер отклонил всех получателей: " + ", ".join(exc.recipients)) from exc
+        raise SmtpError(t.plain("mail.smtp_refused_all", recipients=", ".join(exc.recipients))) from exc
     except smtplib.SMTPException as exc:
-        raise SmtpError(f"Ошибка отправки: {exc}") from exc
+        raise SmtpError(t.plain("mail.smtp_send_failed", error=exc)) from exc
     finally:
         try:
             server.quit()
